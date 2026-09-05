@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE: deploy-kimi1
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: vars
+        run: echo "tag=ghcr.io/${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: docker build -t ${{ steps.vars.outputs.tag }} .
+
+      - name: Run smoke test
+        run: |
+          docker run -d --name smoke -p 3000:3000 -e VERSION=${{ github.sha }} ${{ steps.vars.outputs.tag }}
+          for i in {1..30}; do
+            if curl -sf http://localhost:3000/health; then
+              echo "Health check passed"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Health check failed"
+          docker logs smoke
+          exit 1
+
+      - name: Verify version endpoint
+        run: |
+          curl -sf http://localhost:3000/version | grep -q "${{ github.sha }}"
+
+      - name: Cleanup smoke container
+        if: always()
+        run: docker rm -f smoke || true

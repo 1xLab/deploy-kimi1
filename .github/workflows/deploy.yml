@@ -1,0 +1,71 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to deploy (defaults to commit SHA)'
+        required: false
+        default: ''
+
+env:
+  IMAGE: deploy-kimi1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set deploy tag
+        id: vars
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          cat >> ~/.ssh/config <<EOF
+          Host deploy
+            HostName ${{ secrets.DEPLOY_HOST }}
+            User ${{ secrets.DEPLOY_USER }}
+            Port ${{ secrets.DEPLOY_PORT }}
+            IdentityFile ~/.ssh/deploy_key
+            StrictHostKeyChecking no
+          EOF
+
+      - name: Copy compose file and deploy script
+        run: |
+          scp -q docker-compose.yml deploy:/tmp/deploy-kimi1-compose.yml
+          scp -q scripts/deploy.sh deploy:/tmp/deploy-kimi1-deploy.sh
+
+      - name: Deploy with rollback
+        run: |
+          ssh deploy "
+            set -e
+            mkdir -p ~/deploy-kimi1
+            mv /tmp/deploy-kimi1-compose.yml ~/deploy-kimi1/docker-compose.yml
+            mv /tmp/deploy-kimi1-deploy.sh ~/deploy-kimi1/deploy.sh
+            chmod +x ~/deploy-kimi1/deploy.sh
+            cd ~/deploy-kimi1
+            VERSION=${{ steps.vars.outputs.tag }} IMAGE=ghcr.io/${{ github.repository }} ./deploy.sh
+          "
+
+      - name: Health check after deploy
+        run: |
+          for i in {1..30}; do
+            if ssh deploy "curl -sf http://localhost:3000/health"; then
+              echo "Remote health check passed"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Remote health check failed"
+          exit 1
