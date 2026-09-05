@@ -21,11 +21,13 @@ jobs:
       - name: Set deploy tag
         id: vars
         run: |
+          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           if [ -n "${{ github.event.inputs.tag }}" ]; then
             echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
             echo "tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
+          echo "image=ghcr.io/${repo}" >> "$GITHUB_OUTPUT"
 
       - name: Setup SSH
         run: |
@@ -55,7 +57,7 @@ jobs:
             mv /tmp/deploy-kimi1-deploy.sh ~/deploy-kimi1/deploy.sh
             chmod +x ~/deploy-kimi1/deploy.sh
             cd ~/deploy-kimi1
-            VERSION=${{ steps.vars.outputs.tag }} IMAGE=ghcr.io/${{ github.repository }} ./deploy.sh
+            VERSION=${{ steps.vars.outputs.tag }} IMAGE=${{ steps.vars.outputs.image }} ./deploy.sh
           "
 
       - name: Health check after deploy
