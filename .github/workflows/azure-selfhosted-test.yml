@@ -1,0 +1,22 @@
+name: Azure Self-Hosted Runner Test
+
+on:
+  push:
+    paths:
+      - '.github/workflows/azure-selfhosted-test.yml'
+  workflow_dispatch:
+
+jobs:
+  runner-test:
+    runs-on: [self-hosted, azure, linux]
+    timeout-minutes: 10
+    steps:
+      - name: Runner identity
+        run: |
+          echo "RUNNER_NAME=$RUNNER_NAME"
+          echo "RUNNER_OS=$RUNNER_OS"
+          echo "RUNNER_ARCH=$RUNNER_ARCH"
+          uname -a
+      - name: Basic execution test
+        run: |
+          echo "AZURE_SELF_HOSTED_OK"
